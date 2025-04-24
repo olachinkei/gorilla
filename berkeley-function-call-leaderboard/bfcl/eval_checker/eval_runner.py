@@ -343,8 +343,7 @@ def ast_file_runner(
 
 
 #### Main runner function ####
-def runner(model_names, test_categories, result_dir, score_dir):
-
+def runner(model_names, test_categories, result_dir, score_dir, samples_per_category=None):
     # State udpated by each eval subtask.
     state = dict(
         # A dictionary to store the evaluation scores.
@@ -361,7 +360,6 @@ def runner(model_names, test_categories, result_dir, score_dir):
 
     # Traverse each subdirectory
     for subdir in tqdm(subdirs, desc="Number of models evaluated"):
-
         model_name = subdir.relative_to(result_dir).name
         if model_names is not None and model_name not in model_names:
             continue
@@ -383,6 +381,10 @@ def runner(model_names, test_categories, result_dir, score_dir):
                 continue
 
             model_result = load_file(model_result_json, sort_by_id=True)
+            
+            # If samples_per_category is specified, limit the number of samples
+            if samples_per_category is not None:
+                model_result = model_result[:samples_per_category]
 
             state = evaluate_task(
                 test_category,
@@ -392,6 +394,7 @@ def runner(model_names, test_categories, result_dir, score_dir):
                 model_name,
                 handler,
                 state,
+                samples_per_category
             )
 
     # This function reads all the score files from local folder and updates the
@@ -412,8 +415,8 @@ def evaluate_task(
     model_name,
     handler,
     state,
+    samples_per_category=None
 ):
-
     language = "Python"
     if is_java(test_category):
         language = "Java"
@@ -428,6 +431,10 @@ def evaluate_task(
     prompt_file = find_file_with_suffix(PROMPT_PATH, test_category)
     prompt = load_file(prompt_file, sort_by_id=True)
 
+    # If samples_per_category is specified, limit the number of prompts
+    if samples_per_category is not None:
+        prompt = prompt[:samples_per_category]
+
     if is_relevance_or_irrelevance(test_category):
         accuracy, total_count = relevance_file_runner(
             handler, model_result, prompt, model_name, test_category, score_dir
@@ -437,6 +444,10 @@ def evaluate_task(
         # Find the corresponding possible answer file
         possible_answer_file = find_file_with_suffix(POSSIBLE_ANSWER_PATH, test_category)
         possible_answer = load_file(possible_answer_file, sort_by_id=True)
+
+        # If samples_per_category is specified, limit the number of possible answers
+        if samples_per_category is not None:
+            possible_answer = possible_answer[:samples_per_category]
 
         if is_multi_turn(test_category):
             accuracy, total_count = multi_turn_runner(
@@ -468,7 +479,7 @@ def evaluate_task(
     return state
 
 
-def main(model, test_categories, result_dir, score_dir):
+def main(model, test_categories, result_dir, score_dir, samples_per_category=None):
     if result_dir is None:
         result_dir = RESULT_PATH
     else:
@@ -494,7 +505,7 @@ def main(model, test_categories, result_dir, score_dir):
             model_names.append(model_name.replace("/", "_"))
 
     # Driver function to run the evaluation for all categories involved.
-    runner(model_names, all_test_categories, result_dir, score_dir)
+    runner(model_names, all_test_categories, result_dir, score_dir, samples_per_category)
 
     print(
         f"🏁 Evaluation completed. See {score_dir / 'data_overall.csv'} for overall evaluation results on BFCL V3."
@@ -530,6 +541,12 @@ if __name__ == "__main__":
         type=str,
         help="Path to the folder where the evaluation score files will be stored; relative to the `berkeley-function-call-leaderboard` root folder",
     )
+    parser.add_argument(
+        "--samples-per-category",
+        default=None,
+        type=int,
+        help="Number of samples per category to evaluate",
+    )
 
     args = parser.parse_args()
 
@@ -539,4 +556,5 @@ if __name__ == "__main__":
         args.test_category,
         args.result_dir,
         args.score_dir,
+        args.samples_per_category,
     )

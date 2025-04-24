@@ -58,6 +58,7 @@ def get_args():
         default=None,
         help="Specify the path to a local directory containing the model's config/tokenizer/weights for fully offline inference. Use this only if the model weights are stored in a location other than the default HF_HOME directory.",
     )
+    parser.add_argument("--samples-per-category", type=int, default=None)
     args = parser.parse_args()
 
     return args
@@ -68,7 +69,7 @@ def build_handler(model_name, temperature):
     return handler
 
 
-def get_involved_test_entries(test_category_args, run_ids):
+def get_involved_test_entries(test_category_args, run_ids, samples_per_category=None):
     all_test_file_paths, all_test_categories, all_test_entries_involved = [], [], []
     if run_ids:
         with open(TEST_IDS_TO_GENERATE_PATH) as f:
@@ -93,7 +94,15 @@ def get_involved_test_entries(test_category_args, run_ids):
         for test_category, file_to_open in zip(
             all_test_categories[:], all_test_file_paths[:]
         ):
-            all_test_entries_involved.extend(load_file(PROMPT_PATH / file_to_open))
+            # Load all entries for the category
+            category_entries = load_file(PROMPT_PATH / file_to_open)
+            if category_entries:
+                if samples_per_category is not None and samples_per_category > 0:
+                    # Take specified number of samples from each category
+                    all_test_entries_involved.extend(category_entries[:samples_per_category])
+                else:
+                    # Use all samples if samples_per_category is None or 0
+                    all_test_entries_involved.extend(category_entries)
 
     return (
         all_test_file_paths,
@@ -274,13 +283,15 @@ def main(args):
         all_test_file_paths,
         all_test_categories,
         all_test_entries_involved,
-    ) = get_involved_test_entries(args.test_category, args.run_ids)
+    ) = get_involved_test_entries(args.test_category, args.run_ids, args.samples_per_category)
 
     print(f"Generating results for {args.model}")
     if args.run_ids:
         print("Running specific test cases. Ignoring `--test-category` argument.")
     else:
         print(f"Running full test cases for categories: {all_test_categories}.")
+        if args.samples_per_category is not None:
+            print(f"Taking {args.samples_per_category} samples from each category.")
 
     if args.result_dir is not None:
         args.result_dir = PROJECT_ROOT / args.result_dir
